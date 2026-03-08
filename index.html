@@ -2,8 +2,44 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>記帳本 Pro</title>
+
+<!-- PWA Meta Tags -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="記帳本">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#DC4F2A">
+<meta name="description" content="個人記帳本 Pro">
+
+<!-- PWA Icons (inline SVG as data URI) -->
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='40' fill='%23DC4F2A'/><text x='90' y='125' font-size='100' text-anchor='middle'>💰</text></svg>">
+
+<!-- Inline Web App Manifest -->
+<script>
+const manifestData = {
+  name: '記帳本 Pro',
+  short_name: '記帳本',
+  description: '個人記帳本，支援多帳本、多帳戶、轉帳',
+  start_url: './',
+  display: 'standalone',
+  background_color: '#F2EDE6',
+  theme_color: '#DC4F2A',
+  orientation: 'portrait',
+  icons: [
+    { src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='48' fill='%23DC4F2A'/><text x='96' y='140' font-size='110' text-anchor='middle'>💰</text></svg>", sizes: '192x192', type: 'image/svg+xml' },
+    { src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%23DC4F2A'/><text x='256' y='370' font-size='300' text-anchor='middle'>💰</text></svg>", sizes: '512x512', type: 'image/svg+xml' },
+  ]
+};
+const blob = new Blob([JSON.stringify(manifestData)], {type:'application/json'});
+const manifestURL = URL.createObjectURL(blob);
+document.addEventListener('DOMContentLoaded', () => {
+  const link = document.createElement('link');
+  link.rel = 'manifest'; link.href = manifestURL;
+  document.head.appendChild(link);
+});
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -26,13 +62,18 @@
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-tap-highlight-color: transparent; }
+html, body {
+  overscroll-behavior: none; /* 防止 iOS 橡皮筋效果 */
+}
 body {
   font-family: 'Noto Sans TC', sans-serif;
   background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   max-width: 540px;
   margin: 0 auto;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -304,7 +345,9 @@ body {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 540px;
   background: var(--surface); border-top: 1px solid var(--border);
-  display: flex; height: 60px; z-index: 150;
+  display: flex; height: calc(60px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 150;
 }
 .nav-btn {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
@@ -316,7 +359,7 @@ body {
 
 /* FAB */
 .fab {
-  position: fixed; bottom: 76px;
+  position: fixed; bottom: calc(76px + env(safe-area-inset-bottom));
   right: calc(50% - 270px + 16px);
   width: 52px; height: 52px; border-radius: 50%;
   background: var(--accent); color: white; border: none; cursor: pointer;
@@ -328,7 +371,7 @@ body {
 .fab:hover { box-shadow: 0 8px 28px rgba(220,79,42,0.55); }
 .fab.open { transform: rotate(45deg); }
 .fab-menu {
-  position: fixed; bottom: 136px;
+  position: fixed; bottom: calc(136px + env(safe-area-inset-bottom));
   right: calc(50% - 270px + 16px);
   display: flex; flex-direction: column; gap: 8px;
   z-index: 200; pointer-events: none; opacity: 0;
@@ -1475,6 +1518,30 @@ document.addEventListener('click',e=>{
 });
 
 init();
+
+// ─── PWA SERVICE WORKER (inline) ───
+if('serviceWorker' in navigator){
+  const swCode = `
+    const CACHE = 'budget-pro-v1';
+    const FONTS = [
+      'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=DM+Mono:wght@400;500&display=swap'
+    ];
+    self.addEventListener('install', e => {
+      e.waitUntil(caches.open(CACHE).then(c => c.addAll(FONTS).catch(()=>{})));
+      self.skipWaiting();
+    });
+    self.addEventListener('activate', e => {
+      e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));
+      self.clients.claim();
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).catch(()=>new Response('', {status:503}))));
+    });
+  `;
+  const swBlob = new Blob([swCode], {type:'application/javascript'});
+  const swURL = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swURL, {scope: './'}).catch(()=>{});
+}
 </script>
 </body>
 </html>
